@@ -178,7 +178,7 @@ export class Consumer extends EventEmitter {
     this.stopped = true;
   }
 
-  private async handleSqsResponse(response: ReceieveMessageResponse): Promise<void> {
+  private async handleSqsResponse(response: ReceieveMessageResponse): Promise<number> {
     debug('Received SQS response');
     debug(response);
 
@@ -191,10 +191,12 @@ export class Consumer extends EventEmitter {
           await Promise.all(response.Messages.map(this.processMessage));
         }
         this.emit('response_processed');
+        return response.Messages.length;
       } else {
         this.emit('empty');
       }
     }
+    return 0;
   }
 
   private async processMessage(message: SQSMessage): Promise<void> {
@@ -313,9 +315,12 @@ export class Consumer extends EventEmitter {
       VisibilityTimeout: this.visibilityTimeout
     };
 
-    let currentPollingTimeout = this.pollingWaitTimeMs;
+    let currentPollingTimeout = 0;
     this.receiveMessage(receiveParams)
       .then(this.handleSqsResponse)
+      .then((messageCount: number) => {
+        currentPollingTimeout = messageCount < this.batchSize ? 0 : this.pollingWaitTimeMs;
+      })
       .catch((err) => {
         this.emit('error', err);
         if (isConnectionError(err)) {
